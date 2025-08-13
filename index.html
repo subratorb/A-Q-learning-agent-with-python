@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Q-Learning Grid World Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals (Slate, Stone, Sage Green) -->
+    <!-- Application Structure Plan: A single-page dashboard designed for progressive discovery. The user first encounters the static environment ('The Grid World'), then learns the mechanics ('The Algorithm'), and finally engages with a live simulation ('Training Ground'). This structure separates concepts from application, allowing users to understand the 'what' and 'how' before seeing the 'why' in the interactive training. The core user flow is from passive learning to active experimentation with hyperparameters, which directly addresses the report's analysis of different learning rates. -->
+    <!-- Visualization & Content Choices: 
+        - Environment: Goal=Organize. Method=HTML/Tailwind Grid. Interaction=Hover tooltips. Justification=Provides a clear, static map of the problem space as a baseline.
+        - V-Value Heatmap: Goal=Show change/relationships. Method=Chart.js (matrix chart). Interaction=Live updates during simulation. Justification=This is the most critical visualization, directly showing the agent's knowledge converging in real-time, which is the core finding of the report.
+        - Reward Chart: Goal=Show change/trends. Method=Chart.js (line chart). Interaction=Live updates. Justification=Provides quantitative proof of learning and visualizes the early stopping condition.
+        - Hyperparameter Sliders: Goal=Compare/Interact. Method=HTML sliders. Interaction=Resets and runs a new simulation. Justification=Allows users to replicate the report's comparison of different alpha values and discover their impact firsthand, making the analysis tangible.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+        .grid-cell {
+            transition: all 0.2s ease-in-out;
+            aspect-ratio: 1 / 1;
+        }
+        .agent {
+            width: 60%;
+            height: 60%;
+            border-radius: 50%;
+            background-color: #f59e0b; /* amber-500 */
+            transition: all 0.3s ease;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.7);
+        }
+        .nav-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .nav-button.active {
+            background-color: #10b981; /* emerald-500 */
+            color: white;
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+    </style>
+</head>
+<body class="text-slate-700">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-slate-800">Q-Learning Agent Explorer</h1>
+            <p class="mt-2 text-lg text-slate-600 max-w-3xl mx-auto">An interactive dashboard to explore the training of a reinforcement learning agent in a grid world, based on the academic report.</p>
+        </header>
+
+        <nav class="flex justify-center mb-8 bg-slate-200 rounded-lg p-1">
+            <button data-target="environment" class="nav-button active w-1/3 py-2 px-4 rounded-md font-semibold">The Environment</button>
+            <button data-target="algorithm" class="nav-button w-1/3 py-2 px-4 rounded-md font-semibold">The Algorithm</button>
+            <button data-target="training" class="nav-button w-1/3 py-2 px-4 rounded-md font-semibold">Training Ground</button>
+        </nav>
+
+        <main>
+            <!-- Section 1: The Environment -->
+            <section id="environment" class="content-section active">
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-2xl font-bold text-center mb-4 text-slate-800">The Grid World</h2>
+                    <p class="text-center mb-6 max-w-2xl mx-auto">This is the 5x5 world our agent needs to solve. The goal is to get from the START to the GOAL cell. The agent receives rewards or penalties for its actions, navigating around obstacles and leveraging a special jump to find the optimal path. Hover over any cell to see its properties.</p>
+                    <div id="static-grid-container" class="grid grid-cols-5 gap-2 max-w-md mx-auto"></div>
+                </div>
+            </section>
+
+            <!-- Section 2: The Algorithm -->
+            <section id="algorithm" class="content-section">
+                 <div class="bg-white p-6 rounded-xl shadow-md">
+                    <h2 class="text-2xl font-bold text-center mb-6 text-slate-800">The Q-Learning Algorithm</h2>
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <div class="border border-slate-200 p-4 rounded-lg">
+                            <h3 class="font-bold text-lg mb-2 text-emerald-600">Q-Table: The Brain</h3>
+                            <p>The agent uses a Q-Table to store what it has learned. It's a simple lookup table where for each state (grid cell), it stores a value for each possible action (N, S, E, W). This value, the Q-value, represents the expected future reward of taking that action in that state.</p>
+                        </div>
+                        <div class="border border-slate-200 p-4 rounded-lg">
+                            <h3 class="font-bold text-lg mb-2 text-emerald-600">Epsilon-Greedy: The Strategy</h3>
+                            <p>To learn effectively, the agent must balance exploring new paths with exploiting known good paths. The Epsilon ($\epsilon$) parameter controls this. With probability $\epsilon$, the agent explores by choosing a random action. Otherwise, it exploits its knowledge by choosing the action with the highest Q-value.</p>
+                        </div>
+                        <div class="border border-slate-200 p-4 rounded-lg">
+                            <h3 class="font-bold text-lg mb-2 text-emerald-600">Update Rule: The Learning</h3>
+                            <p>After each action, the agent updates its Q-Table using the reward it received and its estimate of the value of the next state. This is controlled by the Learning Rate ($\alpha$), which determines how much new information overrides old information.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 3: Training Ground -->
+            <section id="training" class="content-section">
+                <div class="grid lg:grid-cols-3 gap-8">
+                    <!-- Left Column: Controls and Live Grid -->
+                    <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-md flex flex-col">
+                        <h2 class="text-2xl font-bold text-center mb-4 text-slate-800">Live Simulation</h2>
+                        <p class="text-center text-sm mb-4">Adjust the hyperparameters and run the simulation to see how the agent learns. The grid shows the agent's movement in the current episode.</p>
+                        
+                        <div class="space-y-4 mb-4">
+                            <div>
+                                <label for="alpha-slider" class="block font-medium text-sm">Learning Rate ($\alpha$): <span id="alpha-value">1.0</span></label>
+                                <input id="alpha-slider" type="range" min="0.1" max="1" step="0.1" value="1" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                            <div>
+                                <label for="gamma-slider" class="block font-medium text-sm">Discount Factor ($\gamma$): <span id="gamma-value">0.9</span></label>
+                                <input id="gamma-slider" type="range" min="0.1" max="0.99" step="0.01" value="0.9" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                            <div>
+                                <label for="epsilon-slider" class="block font-medium text-sm">Initial Epsilon ($\epsilon$): <span id="epsilon-value">1.0</span></label>
+                                <input id="epsilon-slider" type="range" min="0.1" max="1" step="0.1" value="1" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                            </div>
+                        </div>
+
+                        <button id="run-simulation-btn" class="w-full bg-emerald-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-emerald-600 transition-colors mb-4">Run Simulation</button>
+
+                        <div id="live-grid-container" class="grid grid-cols-5 gap-1 flex-grow"></div>
+                        <div id="simulation-status" class="mt-4 text-center font-semibold text-slate-600">Ready to train.</div>
+                    </div>
+
+                    <!-- Right Column: Charts -->
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
+                        <h2 class="text-2xl font-bold text-center mb-4 text-slate-800">Learning Analysis</h2>
+                        <p class="text-center text-sm mb-6">These charts visualize the agent's learning process. The heatmap shows the learned value of each state, while the line chart tracks the total reward gained in each episode.</p>
+                        
+                        <div class="space-y-8">
+                            <div>
+                                <h3 class="text-lg font-semibold text-center mb-2">State Value ($V(s)$) Heatmap</h3>
+                                <div class="chart-container">
+                                    <canvas id="v-value-chart"></canvas>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-semibold text-center mb-2">Cumulative Reward per Episode</h3>
+                                <div class="chart-container">
+                                    <canvas id="reward-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- CONFIGURATION ---
+            const CONFIG = {
+                gridSize: 5,
+                startPos: { r: 1, c: 0 }, // [2,1] is (1,0) in 0-indexed
+                goalPos: { r: 4, c: 4 }, // [5,5] is (4,4)
+                jumpStartPos: { r: 1, c: 3 }, // [2,4] is (1,3)
+                jumpEndPos: { r: 3, c: 3 }, // [4,4] is (3,3)
+                obstacles: [
+                    { r: 0, c: 3 }, { r: 1, c: 1 }, { r: 2, c: 3 }, { r: 3, c: 1 }, { r: 3, c: 2 }
+                ],
+                actions: { 0: { r: -1, c: 0 }, 1: { r: 1, c: 0 }, 2: { r: 0, c: 1 }, 3: { r: 0, c: -1 } }, // N, S, E, W
+                rewards: { goal: 10, jump: 5, step: -1 },
+                maxEpisodes: 100,
+                earlyStopWindow: 30,
+                earlyStopThreshold: 10,
+                simulationStepDelay: 50, // ms
+            };
+
+            // --- STATE ---
+            let appState = {
+                alpha: 1.0,
+                gamma: 0.9,
+                epsilon: 1.0,
+                epsilonDecay: 0.999,
+                qTable: null,
+                agentPos: null,
+                currentEpisode: 0,
+                isSimulating: false,
+                simulationInterval: null,
+                rewardsHistory: [],
+            };
+
+            // --- DOM ELEMENTS ---
+            const staticGridContainer = document.getElementById('static-grid-container');
+            const liveGridContainer = document.getElementById('live-grid-container');
+            const runBtn = document.getElementById('run-simulation-btn');
+            const statusDisplay = document.getElementById('simulation-status');
+            const navButtons = document.querySelectorAll('.nav-button');
+            const contentSections = document.querySelectorAll('.content-section');
+            const alphaSlider = document.getElementById('alpha-slider');
+            const gammaSlider = document.getElementById('gamma-slider');
+            const epsilonSlider = document.getElementById('epsilon-slider');
+            const alphaValueSpan = document.getElementById('alpha-value');
+            const gammaValueSpan = document.getElementById('gamma-value');
+            const epsilonValueSpan = document.getElementById('epsilon-value');
+
+            // --- CHART.JS SETUP ---
+            let vValueChart, rewardChart;
+
+            function createVValueChart() {
+                const ctx = document.getElementById('v-value-chart').getContext('2d');
+                if (vValueChart) vValueChart.destroy();
+                const vValues = getVValues().map(row => row.map(val => ({ v: val })));
+
+                vValueChart = new Chart(ctx, {
+                    type: 'matrix',
+                    data: {
+                        datasets: [{
+                            label: 'State Value (V)',
+                            data: vValues,
+                            backgroundColor: (ctx) => {
+                                const value = ctx.dataset.data[ctx.dataIndex.i * CONFIG.gridSize + ctx.dataIndex.j].v;
+                                const maxVal = 10;
+                                const minVal = -10;
+                                const normalized = (value - minVal) / (maxVal - minVal);
+                                const hue = 120 * normalized; // Green spectrum
+                                return `hsl(${hue}, 80%, 50%)`;
+                            },
+                            width: ({chart}) => (chart.chartArea || {}).width / CONFIG.gridSize - 1,
+                            height: ({chart}) => (chart.chartArea || {}).height / CONFIG.gridSize - 1,
+                        }]
+                    },
+                    options: {
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    title: () => '',
+                                    label: (ctx) => `V: ${ctx.dataset.data[ctx.dataIndex.i * CONFIG.gridSize + ctx.dataIndex.j].v.toFixed(2)}`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { display: false },
+                            y: { display: false }
+                        }
+                    }
+                });
+            }
+
+            function createRewardChart() {
+                const ctx = document.getElementById('reward-chart').getContext('2d');
+                if (rewardChart) rewardChart.destroy();
+                rewardChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Cumulative Reward',
+                            data: [],
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { beginAtZero: false, title: { display: true, text: 'Reward' } },
+                            x: { title: { display: true, text: 'Episode' } }
+                        }
+                    }
+                });
+            }
+
+            // --- HELPER FUNCTIONS ---
+            const isObstacle = (pos) => CONFIG.obstacles.some(o => o.r === pos.r && o.c === pos.c);
+            const stateToIndex = (pos) => pos.r * CONFIG.gridSize + pos.c;
+            const indexToState = (index) => ({ r: Math.floor(index / CONFIG.gridSize), c: index % CONFIG.gridSize });
+
+            function createGrid(container) {
+                container.innerHTML = '';
+                for (let r = 0; r < CONFIG.gridSize; r++) {
+                    for (let c = 0; c < CONFIG.gridSize; c++) {
+                        const cell = document.createElement('div');
+                        cell.id = `${container.id}-cell-${r}-${c}`;
+                        cell.classList.add('grid-cell', 'border', 'flex', 'items-center', 'justify-center');
+                        let cellType = 'Normal';
+                        let bgColor = 'bg-slate-100';
+                        if (r === CONFIG.startPos.r && c === CONFIG.startPos.c) {
+                            bgColor = 'bg-blue-300'; cellType = 'Start';
+                        } else if (r === CONFIG.goalPos.r && c === CONFIG.goalPos.c) {
+                            bgColor = 'bg-green-400'; cellType = 'Goal';
+                        } else if (r === CONFIG.jumpStartPos.r && c === CONFIG.jumpStartPos.c) {
+                            bgColor = 'bg-purple-400'; cellType = 'Jump Start';
+                        } else if (r === CONFIG.jumpEndPos.r && c === CONFIG.jumpEndPos.c) {
+                            bgColor = 'bg-purple-300'; cellType = 'Jump End';
+                        } else if (isObstacle({ r, c })) {
+                            bgColor = 'bg-slate-800'; cellType = 'Obstacle';
+                        }
+                        cell.classList.add(bgColor);
+                        cell.dataset.tooltip = `Cell: [${r+1}, ${c+1}]\nType: ${cellType}`;
+                        container.appendChild(cell);
+                    }
+                }
+            }
+            
+            function updateLiveGrid() {
+                // Remove agent from all cells
+                document.querySelectorAll(`#${liveGridContainer.id} .agent`).forEach(a => a.remove());
+                // Add agent to current position
+                if (appState.agentPos) {
+                    const cell = document.getElementById(`${liveGridContainer.id}-cell-${appState.agentPos.r}-${appState.agentPos.c}`);
+                    if (cell) {
+                        const agentDiv = document.createElement('div');
+                        agentDiv.className = 'agent';
+                        cell.appendChild(agentDiv);
+                    }
+                }
+            }
+
+            function getVValues() {
+                const vValues = new Array(CONFIG.gridSize).fill(0).map(() => new Array(CONFIG.gridSize).fill(0));
+                for (let i = 0; i < appState.qTable.length; i++) {
+                    const pos = indexToState(i);
+                    vValues[pos.r][pos.c] = Math.max(...appState.qTable[i]);
+                }
+                return vValues;
+            }
+
+            function updateVValueChart() {
+                if (!vValueChart) return;
+                const vValues = getVValues();
+                const chartData = [];
+                for(let r = 0; r < CONFIG.gridSize; r++) {
+                    for(let c = 0; c < CONFIG.gridSize; c++) {
+                        chartData.push({v: vValues[r][c]});
+                    }
+                }
+                vValueChart.data.datasets[0].data = chartData;
+                vValueChart.update('none');
+            }
+            
+            function updateRewardChart() {
+                if (!rewardChart) return;
+                rewardChart.data.labels = appState.rewardsHistory.map((_, i) => i + 1);
+                rewardChart.data.datasets[0].data = appState.rewardsHistory;
+                rewardChart.update();
+            }
+
+            // --- AGENT & ENVIRONMENT LOGIC ---
+            function resetSimulation() {
+                appState.qTable = new Array(CONFIG.gridSize * CONFIG.gridSize).fill(0).map(() => new Array(Object.keys(CONFIG.actions).length).fill(0));
+                appState.agentPos = { ...CONFIG.startPos };
+                appState.currentEpisode = 0;
+                appState.rewardsHistory = [];
+                appState.epsilon = parseFloat(epsilonSlider.value);
+                updateLiveGrid();
+                updateVValueChart();
+                updateRewardChart();
+            }
+
+            function chooseAction(state) {
+                if (Math.random() < appState.epsilon) {
+                    return Math.floor(Math.random() * Object.keys(CONFIG.actions).length); // Explore
+                } else {
+                    const stateIdx = stateToIndex(state);
+                    return appState.qTable[stateIdx].indexOf(Math.max(...appState.qTable[stateIdx])); // Exploit
+                }
+            }
+            
+            function step(action) {
+                let reward = CONFIG.rewards.step;
+                let done = false;
+                let nextState = { ...appState.agentPos };
+
+                if (appState.agentPos.r === CONFIG.jumpStartPos.r && appState.agentPos.c === CONFIG.jumpStartPos.c) {
+                    nextState = { ...CONFIG.jumpEndPos };
+                    reward = CONFIG.rewards.jump;
+                } else {
+                    const move = CONFIG.actions[action];
+                    const newPos = { r: appState.agentPos.r + move.r, c: appState.agentPos.c + move.c };
+                    if (newPos.r >= 0 && newPos.r < CONFIG.gridSize && newPos.c >= 0 && newPos.c < CONFIG.gridSize && !isObstacle(newPos)) {
+                        nextState = newPos;
+                    }
+                }
+
+                if (nextState.r === CONFIG.goalPos.r && nextState.c === CONFIG.goalPos.c) {
+                    reward = CONFIG.rewards.goal;
+                    done = true;
+                }
+                
+                return { nextState, reward, done };
+            }
+
+            function updateQTable(state, action, reward, nextState) {
+                const stateIdx = stateToIndex(state);
+                const nextStateIdx = stateToIndex(nextState);
+                const oldQ = appState.qTable[stateIdx][action];
+                const maxFutureQ = Math.max(...appState.qTable[nextStateIdx]);
+                const newQ = oldQ + appState.alpha * (reward + appState.gamma * maxFutureQ - oldQ);
+                appState.qTable[stateIdx][action] = newQ;
+            }
+
+            // --- SIMULATION LOOP ---
+            function runSimulation() {
+                if (appState.isSimulating) {
+                    clearInterval(appState.simulationInterval);
+                    appState.isSimulating = false;
+                    runBtn.textContent = 'Run Simulation';
+                    statusDisplay.textContent = 'Training paused.';
+                    return;
+                }
+                
+                resetSimulation();
+                appState.isSimulating = true;
+                runBtn.textContent = 'Pause Simulation';
+                
+                let episodeReward = 0;
+                let episodeSteps = 0;
+
+                appState.simulationInterval = setInterval(() => {
+                    if (appState.currentEpisode >= CONFIG.maxEpisodes) {
+                        endSimulation('Max episodes reached.');
+                        return;
+                    }
+
+                    statusDisplay.textContent = `Training... Episode: ${appState.currentEpisode + 1}`;
+                    
+                    const currentState = { ...appState.agentPos };
+                    const action = chooseAction(currentState);
+                    const { nextState, reward, done } = step(action);
+
+                    updateQTable(currentState, action, reward, nextState);
+                    appState.agentPos = nextState;
+                    episodeReward += reward;
+                    episodeSteps++;
+
+                    updateLiveGrid();
+                    
+                    if (done || episodeSteps > 200) { // End episode if done or too long
+                        appState.rewardsHistory.push(episodeReward);
+                        appState.currentEpisode++;
+                        appState.epsilon *= appState.epsilonDecay;
+                        
+                        // Reset for next episode
+                        appState.agentPos = { ...CONFIG.startPos };
+                        episodeReward = 0;
+                        episodeSteps = 0;
+                        
+                        updateVValueChart();
+                        updateRewardChart();
+
+                        // Check early stopping
+                        if (appState.rewardsHistory.length >= CONFIG.earlyStopWindow) {
+                            const recentRewards = appState.rewardsHistory.slice(-CONFIG.earlyStopWindow);
+                            const avgReward = recentRewards.reduce((a, b) => a + b, 0) / CONFIG.earlyStopWindow;
+                            if (avgReward > CONFIG.earlyStopThreshold) {
+                                endSimulation(`Early stopping triggered at episode ${appState.currentEpisode}.`);
+                                return;
+                            }
+                        }
+                    }
+                }, CONFIG.simulationStepDelay);
+            }
+            
+            function endSimulation(message) {
+                clearInterval(appState.simulationInterval);
+                appState.isSimulating = false;
+                runBtn.textContent = 'Run Simulation';
+                statusDisplay.textContent = message;
+            }
+
+            // --- EVENT LISTENERS ---
+            navButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const targetId = button.dataset.target;
+                    navButtons.forEach(btn => btn.classList.remove('active'));
+                    contentSections.forEach(sec => sec.classList.remove('active'));
+                    button.classList.add('active');
+                    document.getElementById(targetId).classList.add('active');
+                });
+            });
+
+            alphaSlider.addEventListener('input', (e) => {
+                appState.alpha = parseFloat(e.target.value);
+                alphaValueSpan.textContent = appState.alpha.toFixed(1);
+            });
+            gammaSlider.addEventListener('input', (e) => {
+                appState.gamma = parseFloat(e.target.value);
+                gammaValueSpan.textContent = appState.gamma.toFixed(2);
+            });
+            epsilonSlider.addEventListener('input', (e) => {
+                appState.epsilon = parseFloat(e.target.value);
+                epsilonValueSpan.textContent = appState.epsilon.toFixed(1);
+            });
+            
+            runBtn.addEventListener('click', runSimulation);
+
+            // --- INITIALIZATION ---
+            createGrid(staticGridContainer);
+            createGrid(liveGridContainer);
+            resetSimulation();
+            createVValueChart();
+            createRewardChart();
+        });
+    </script>
+</body>
+</html>
